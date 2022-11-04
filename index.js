@@ -1,92 +1,223 @@
 'use strict'
 
-// const compose = (...fns) =>
-// 	arg => fns.reduce(
-// 		(composed, f) => f(composed),
-// 		arg
-// 	);
+const app = {
+	// Initial state
+	state: {
+		data: [],
+		searchQuery: '',
 
-const loadStorage = key => key && JSON.parse(sessionStorage.getItem(key));
-const setStroage = (key, data) => sessionStorage.setItem(key, JSON.stringify(data));
-const _fetch = async url => {
-	const cache = loadStorage('gate31'); // Get cache
-	// console.log('cache: ', cache);
-	if (cache) return cache; // Cache
+		// External data API
+		// url: 'https://jsonplaceholder.typicode.com/posts/?_start=0&_limit=7',
 
-	let data;
+		// Github data API
+		url: 'https://raw.githubusercontent.com/Andrew-Dyachenko/test-task-for-candidates/master/data.json',
+		storageName: 'gate31'
+	},
 
-	await fetch(url)
-		.then(res => res.json())
-		.then(json => {
-			// console.log('json: ', json);
-			setStroage('gate31', json); // Set cache
-			data = json;
-			return json;
-		})
-		.catch(console.error);
+	// Set state func
+	setState(newState) {
+		this.state = {
+			...this.state,
+			...newState
+		}
 
-	return data;
-}
+		this.render();
+	},
 
-const generateChildren = data => {
-	console.log('data: ', data);
-	// const stringified = JSON.stringify(data, null, 2); // TMP
-	// console.log('stringified: ', stringified);
-	const fragment = document.createDocumentFragment();
-	const ol = document.createElement('ol');
-	fragment.appendChild(ol);
-	data.forEach(({ title }) => {
-		// console.log('title: ', title);
-		const li = document.createElement('li');
-		li.innerText = title;
-		ol.appendChild(li);
-	})
+	// Init
+	async init(state) {
+		// Add user data to the state if it's exist
+		if (state) this.setState({ state });
 
-	fragment.appendChild(ol);
+		// Get cache
+		const cache = this.getStorage(this.state.storageName);
 
-	return fragment;
-}
+		// Set cache instead of fetch
+		if (cache) this.setState({ data: cache });
 
-const isPromise = arg => {
-	if (typeof arg === 'object' && typeof arg.then === 'function') {
-		return true;
+		// Set cache
+		else {
+			// Fetch data
+			const data = await this.fetch(this.state.url);
+
+			// If data is correct save it to storage and state
+			if (data) {
+
+				// Set state
+				this.setState({ data });
+
+				// Set storage
+				this.setStroage(this.state.storageName, data);
+			}
+		}
+
+		// Get search field
+		const search = document.getElementById('search');
+
+		// Get submit button
+		const submit = document.getElementById('submit');
+
+		// Get form
+		const form = document.getElementById('form');
+
+		// If data exist
+		if (this.state.data.length) {
+			// Get URL bar search
+			const searchQuery = this.getSearchParam('searchQuery');
+
+			this.setState({ searchQuery });
+			search.value = searchQuery;
+
+			// Enable serach field
+			search.removeAttribute('disabled');
+
+			// Enable submit button
+			submit.removeAttribute('disabled');
+
+			// Add form onsubmit event
+			form.addEventListener('submit', this.search.bind(app, search));
+		}
+
+		else {
+			// Disable serach field
+			search.addAttribute('disabled');
+
+			// Disable submit button
+			submit.addAttribute('disabled');
+
+			// Remove form onsubmit event
+			form.removeEventListener('submit', this.search);
+		}
+
+		// Render list
+		this.render();
+	},
+
+	// Get URL search param(s)
+	getSearchParam(paramName = '') {
+		// Create search params object from existing window location URL
+		const searchParams = new URLSearchParams(window.location.search);
+
+		// Find & extract neccessary param
+		const searchQuery = searchParams.get(paramName);
+
+		// Return founded param
+		return searchQuery;
+	},
+
+	// Search
+	search: (search, event) => {
+		// Prevent default html form behavior
+		event.preventDefault();
+
+		// Get search value (query)
+		const searchQuery = search.value;
+
+		// Set search query to the state
+		app.setState({ searchQuery });
+
+		// Get window.location properties
+		const { protocol, host, pathname } = window.location;
+
+		// Create new URL with searchQuery
+		const newURL = `${protocol}//${host}${pathname}?searchQuery=${searchQuery}`;
+
+		// Push the new history URL to the address bar without the page reload
+		window.history.pushState({ path: newURL }, '', newURL);
+	},
+
+	// Get Session Storage
+	getStorage: key =>
+		key && JSON.parse(sessionStorage.getItem(key)),
+
+	// Set Session Storage
+	setStroage: (key, data) =>
+		sessionStorage.setItem(key, JSON.stringify(data)),
+
+	// Fetch wrapper
+	async fetch(url) {
+		// Initial fetch data
+		let data;
+
+		await fetch(url)
+			.then(res => res.json())
+			.then(json => {
+				data = json;
+				return json;
+			})
+			.catch(console.error);
+
+		// Return fetch data result
+		return data;
+	},
+
+	// Render app
+	render() {
+		// List
+		const list = document.getElementById('form__list');
+
+		// If data array is not empty
+		if (this.state.data.length) {
+			// Template
+			const template = document.getElementById('form__item--template');
+
+			// Clear DOM list before a new render
+			list.innerHTML = '';
+
+			// Render all data
+			this.state.data
+				// Filter data by the search field
+				.filter(({ title }) => {
+					// Get search query
+					const { searchQuery } = this.state;
+
+					// Filter condition
+					if (this.state.searchQuery) {
+						const regex = new RegExp(searchQuery, 'g');
+						return regex.test(title);
+					}
+
+					// If search query is empty cancel filtering
+					return true;
+				})
+				// Display ...rest data after the filtering
+				.forEach((item, index) => {
+
+					// Clone template
+					const clone = template.content.cloneNode(true);
+
+					// Find title node inside a clone
+					const title = clone.querySelector('.item__title');
+
+					// Find text node inside a clone
+					const text = clone.querySelector('.item__text');
+
+					// Fill the title clone
+					title.textContent = item.title;
+
+					// Fill the text clone
+					text.textContent = item.body;
+
+					// Create comment with item's index
+					const comment = document.createComment(` ${index + 1} `)
+
+					// Prepend the comment inside the clone
+					clone.prepend(comment);
+
+					// Append the clone
+					list.appendChild(clone);
+				});
+		}
+
+		// If data array is empty
+		else {
+			list.innerText = 'No data founded';
+		}
 	}
-
-	return false;
 }
-// const pipeAwait = (...fns) => param => fns.reduce(async (result, next) => next(await result), param)
-const asyncCompose = (...fns) =>
-	arg => {
-		console.log('arg: ', arg);
-		return fns.reduce(
-			async (composed, f) => isPromise(composed) ? await f(composed) : f(composed),
-			Promise.resolve(arg)
-		);
-
-		// return arg => fns.reduce(
-		// 	(composed, f) => f(composed),
-		// 	arg
-		// );
-	}
-
-
-const render = root => {
-	console.log('root: ', root);
-	return fragment => {
-		console.log('fragment: ', fragment);
-		document
-			.getElementById(root)
-			.appendChild(fragment);
-	}
-}
-
-const app = asyncCompose(
-	_fetch,
-	generateChildren,
-	render.bind(Object.create(null), document.getElementById('root'))
-);
 
 // We don't actually need DOMContentLoaded because of the defer attribute, but we use it as a fallback
 document.addEventListener('DOMContentLoaded', () => {
-	app('https://jsonplaceholder.typicode.com/posts/?_start=0&_limit=7');
+	// App init
+	app.init();
 });
